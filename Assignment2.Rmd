@@ -1,0 +1,141 @@
+---
+title: "Titanic Survivor Analysis"
+author: "Bryan Eng"
+date: "October 14, 2018"
+output: html_document
+---
+
+In this assignment, you will gain practical experience with data preprocessing and classification
+methods. Solve the tasks using R and answer the questions.
+
+##Task 1. 
+Read in the dataset and split the dataset randomly into 80% training data and 20% test data using
+the function sample(). To make sure that everybody uses the same training/test split, set the seed of
+sample to 1 using command set.seed(1).
+
+```{r}
+require(caTools)
+require(plyr)
+require(tree)
+set.seed(1)
+```
+
+```{r}
+data <- read.csv('titanic3.csv')
+data <- data[-c(1310),]
+sample <- sample.split(data, SplitRatio = 0.8)
+train <- subset(data, sample == TRUE)
+test <- subset(data, sample == FALSE)
+```
+
+
+#Task 2. 
+Report the number of missing values per attribute in the training and test dataset.
+
+```{r}
+summary(test)
+summary(train)
+```
+
+For the test set, there were missing values of: 63 in age, 216 in cabin, 1 in embarked, 178 in boat, 253 in body, and 126 in home.dest.
+For the training set, there were missing values of: 213 in age, 1 in fare, 798 in cabin, 2 in embarked, 645 in boat, 935 in body, and 439 in home.dest.
+
+
+##Task 3. 
+You can use only past data to predict the future. Assume that you want to predict the survival of
+a passenger at the time of the accident, i.e. when the Titanic hit the iceberg. With this assumption in
+mind, which attributes do you use as features?
+
+For the most part, all of the attributes except for ticket, fare, cabin, boat, body, and home.dest would be correlated to the survival rate. Ticket is an identification number, which is irrelevant. Fare is also irrelevant. Cabin has too many missing values to be of any use, so it should be ignored. Boat and body can only be recorded after the accident, so it cannot be used in predictions. Finally, the home destination has no relation to whether a passenger survives.
+
+Passenger class would be an important factor to survival. It is likely that first and second class passengers would be informed of the danger sooner than third class passengers. Because there are so many third class passengers, they may not be told of the danger until it is too late. Third class passengers also have rooms that are much lower down inside the ship, so it would take longer for them to get to the life rafts.
+
+Ticket fare is linked to the passenger class (first class pays more than second and third class, etc). However, data can still be gathered from this attribute.
+
+Age is another important factor. Young adults and very young children are more likely to survive. Young adults are more physically able than other age groups, and are able to make more informed decisions than children. Infants are likely to be carried by their parents, and would be brought along onto the life rafts.
+
+Gender is also an important feature. Women are much more likely to survive, likely due to the mentality that women and children should board the life rafts first.
+
+Sibling count could also predict survivability. Having a larger number of siblings could mean that it is more difficult to gather together, which can lower a passenger's survivability rate. This can go together with the child/parent feature, as parents are unlikely to leave their children behind.
+
+Finally, the embarked attribute can give some information as well. Passengers that embark from the earlier ports could have rooms that are on higher levels, and thus closer to the life rafts. This could impact their survivability.
+
+
+##Task 4. 
+How do you deal with missing values in the different attributes? Report your plan. Preprocess the
+dataset according to your plan.
+
+For the age attribute, setting missing values to the mean would be a good way to fill in those values.
+
+```{r include=FALSE}
+train$age[is.na(train$age)] <- mean(train$age, na.rm = TRUE)
+test$age[is.na(test$age)] <- mean(test$age, na.rm = TRUE)
+```
+
+Cabin has too many missing values, and with no meaningful way to fill in the blanks the column should be removed. Boat and body are data recorded after the accident, so they should be removed. Name and ticket are just labels that have nothing to do with survival. Finally, home destination is irrelevant to survival.
+
+```{r}
+train <- subset(train, select=-c(name, cabin, ticket, boat, body, home.dest))
+test <- subset(test, select=-c(name, cabin, ticket, boat, body, home.dest))
+```
+
+There are a few unlabeled entries in the embarked column. The amount is very small in comparison to the dataset, so the rows with the missing embarked data can be removed.
+
+```{r}
+train <- train[train$embarked != "", ]
+test <- test[test$embarked != "", ]
+```
+
+
+##Task 5. 
+Using package tree, learn a decision tree from the training data. Plot the resulting tree. What is
+the size of the tree? What is the accuracy of the tree on the test dataset?
+
+```{r}
+tree.data <- tree(as.factor(survived) ~ pclass + sex + age + fare + sibsp + parch + embarked, data=train)
+tree.data2 <- tree(survived ~ pclass + sex + age + fare + sibsp + parch + embarked, data=train)
+plot(tree.data, main = "Titanic Decision Tree")
+text(tree.data, pretty = 1)
+plot(tree.data2, main = "Titanic Decision Tree")
+text(tree.data2, pretty = 1)
+tree.pred <- predict(tree.data, test, type="class")
+with(test, table(tree.pred, survived))
+```
+
+The size of the tree is 13.
+The accuracy is (150 + 77)/(150 + 77 + 26 + 29) = 0.80
+
+
+##Task 6. 
+Analyze the importance of attributes in your decision tree. Report the top three most important
+attributes in decreasing order of importance and explain your choice. What knowledge about the
+survival of passengers can you learn from the decision tree?
+
+The most important attributes for survival are sex, class, and age. The most important factor is the sex. Women have a high chance of surviving compared to men. After sex, having a higher class contributes to the survival if a passenger is male. The third most important attribute is age. Men that are of higher class and are children are much more likely to survive than men who are adults.
+
+
+##Task 7. 
+Prune your decision tree learnt in task 5. To do so, use cost complexity pruning and perform
+cross-validation in order to determine the optimal level of tree complexity. What is the size of the
+pruned decision tree?
+
+```{r}
+cv.data <- cv.tree(tree.data, FUN = prune.misclass)
+plot(cv.data)
+best.size <- cv.data$size[which(cv.data$dev==min(cv.data$dev))]
+prune.data <- prune.tree(tree.data, best = best.size)
+plot(prune.data)
+text(prune.data, pretty = 0)
+```
+
+The cross validation indicates that the optimal level of tree complexity is 7. The size of the pruned tree is 13.
+
+
+```{r}
+library(pROC)
+roc.tree = roc(test$survived, as.numeric(as.character(tree.pred)))
+auc.tree = auc(roc.tree)
+auc.tree
+```
+
+
